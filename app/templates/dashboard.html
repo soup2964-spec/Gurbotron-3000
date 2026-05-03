@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Gurbotron-3000</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; background: #0f1115; color: #e8eaed; }
+    h1 { font-size: 1.35rem; }
+    .warn { background: #3d2918; border: 1px solid #b45309; padding: .75rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
+    .ok { background: #16231d; border: 1px solid #15803d; padding: .75rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
+    section { margin-bottom: 2rem; border: 1px solid #30363d; border-radius: 10px; padding: 1rem 1.25rem; background: #161b22; }
+    label { display: block; font-size: .85rem; margin-top: .75rem; color: #9ca3af; }
+    textarea, input[type=text] { width: 100%; box-sizing: border-box; padding: .5rem .65rem; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e8eaed; }
+    textarea { min-height: 72px; font-family: inherit; }
+    button { cursor: pointer; border-radius: 6px; border: 1px solid #30363d; background: #21262d; color: #e8eaed; padding: .35rem .75rem; margin-right: .35rem; margin-top: .5rem; }
+    button.danger { border-color: #7f1d1d; background: #450a0a; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { border-bottom: 1px solid #30363d; padding: .45rem .35rem; text-align: left; vertical-align: top; }
+    code { font-size: .78rem; color: #93c5fd; word-break: break-all; }
+    .subcard { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #30363d; }
+    small { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <h1>Gurbotron-3000</h1>
+  <p><small>Fanvue ingest · subscriber memory · automated replies (stub LLM). Churn wipes all stored data for that fan.</small></p>
+
+  {% if fanvue_ok %}
+  <div class="ok">Fanvue token + creator UUID loaded — polling enabled.</div>
+  {% else %}
+  <div class="warn">Set <code>FANVUE_ACCESS_TOKEN</code> and <code>FANVUE_CREATOR_UUID</code> in <code>.env</code> for live sync.</div>
+  {% endif %}
+
+  {% if ppv_templates_error %}
+  <div class="warn"><small><strong>PPV templates:</strong> {{ ppv_templates_error }}</small></div>
+  {% endif %}
+
+  <section>
+    <h2>Bot prompt & guidelines</h2>
+    <form method="post" action="/dashboard/settings">
+      <label>Master prompt</label>
+      <textarea name="master_prompt">{{ bot.master_prompt }}</textarea>
+      <label>Guidelines</label>
+      <textarea name="guidelines">{{ bot.guidelines }}</textarea>
+      <label>Exit message (after PPV ignored)</label>
+      <textarea name="exit_message">{{ bot.exit_message }}</textarea>
+      <label style="display:flex;align-items:center;gap:.5rem;margin-top:1rem;">
+        <input type="checkbox" name="automation_paused_global" value="on" {% if bot.automation_paused_global %}checked{% endif %}/>
+        Pause automation globally
+      </label>
+      <button type="submit">Save settings</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Subscribers (memory stored until churn)</h2>
+    {% if not subscribers %}
+    <p>No subscribers in DB yet — they appear after Fanvue polling sees chats.</p>
+    {% endif %}
+    {% for s in subscribers %}
+    <div class="subcard">
+      <strong>@{{ s.handle or "?" }}</strong>
+      {% if s.display_name %}<span> — {{ s.display_name }}</span>{% endif %}
+      <div><small>uuid</small> <code>{{ s.fanvue_user_uuid }}</code></div>
+      <div><small>automation</small> {% if s.automation_enabled %}on{% else %}off{% endif %}
+        · since PPV offer: {{ s.messages_since_ppv_offer }}</div>
+
+      <form method="post" action="/dashboard/subscribers/{{ s.fanvue_user_uuid }}/toggle" style="display:inline">
+        <button type="submit">Toggle automation</button>
+      </form>
+      <form method="post" action="/dashboard/subscribers/{{ s.fanvue_user_uuid }}/churn" style="display:inline">
+        <button type="submit" class="danger" onclick="return confirm('Delete ALL memory + messages for this subscriber?');">Churn — delete data</button>
+      </form>
+
+      <div class="subcard">
+        <strong>PPV / paid chat offer</strong>
+        <small>Templates come from Fanvue <code>GET /chats/templates</code>. Pick one <em>or</em> compose a custom message (not both).</small>
+
+        {% if ppv_templates %}
+        <form method="post" action="/dashboard/subscribers/{{ s.fanvue_user_uuid }}/send-ppv">
+          <label>Saved template</label>
+          <select name="template_uuid">
+            {% for offer in ppv_templates %}
+            <option value="{{ offer.uuid }}">
+              {% if offer.text %}{{ offer.text[:80] }}{% if offer.text|length > 80 %}…{% endif %}{% else %}(no text preview){% endif %}
+              {% if offer.price is not none %} · ${{ '%.2f' % (offer.price / 100.0) }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <button type="submit">Send template to fan</button>
+        </form>
+        {% elif fanvue_ok %}
+        <p><small>No templates returned — create chat templates in Fanvue first.</small></p>
+        {% endif %}
+
+        <form method="post" action="/dashboard/subscribers/{{ s.fanvue_user_uuid }}/send-ppv" style="margin-top:.75rem;">
+          <input type="hidden" name="template_uuid" value=""/>
+          <label>Custom message</label>
+          <textarea name="ppv_custom_text" placeholder="Caption shown with the unlock"></textarea>
+          <label>Price in cents (≥ 300 for paid — leave blank for free)</label>
+          <input type="number" name="ppv_price_cents" min="300" placeholder="e.g. 999"/>
+          <label>Optional media UUIDs (comma or space separated)</label>
+          <input type="text" name="ppv_media_uuids" placeholder="attach vault/media IDs"/>
+          <button type="submit">Send custom offer</button>
+        </form>
+      </div>
+
+      <form method="post" action="/dashboard/subscribers/{{ s.fanvue_user_uuid }}/context">
+        <label><code>llm_context</code> JSON</label>
+        <textarea name="llm_context_json">{{ s.llm_context | tojsonpretty }}</textarea>
+        <button type="submit">Save context</button>
+      </form>
+
+      <form method="post" action="/dashboard/subscribers/{{ s.fanvue_user_uuid }}/facts">
+        <label>New fact (key/value for LLM)</label>
+        <input type="text" name="fact_key" placeholder="e.g. favorite_team"/>
+        <input type="text" name="fact_value" placeholder="value"/>
+        <button type="submit">Save fact</button>
+      </form>
+
+      {% if s.facts %}
+      <ul>
+        {% for f in s.facts %}
+        <li><strong>{{ f.fact_key }}</strong>: {{ f.fact_value }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>API</h2>
+    <p><small><code>GET /api/subscribers/{{ '{fanvue_uuid}' }}/llm-pack</code> — full bundle for a real LLM adapter.</small></p>
+    <p><small><code>POST /api/subscribers/{{ '{fanvue_uuid}' }}/send-ppv</code> — JSON body: <code>template_uuid</code> <em>or</em> <code>text</code> + optional <code>price_cents</code> / <code>media_uuids</code>.</small></p>
+  </section>
+</body>
+</html>

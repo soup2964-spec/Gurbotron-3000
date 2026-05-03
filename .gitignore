@@ -30,3 +30,6 @@ Thumbs.db
 .npm/
 .cache/
 coverage/
+
+# Local SQLite / runtime data
+/data/

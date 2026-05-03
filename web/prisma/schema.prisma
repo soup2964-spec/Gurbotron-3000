@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model BotSettings {
+  id                     Int     @id @default(1)
+  masterPrompt           String  @default("") @map("master_prompt")
+  guidelines             String  @default("") @map("guidelines")
+  exitMessage            String  @default("") @map("exit_message")
+  automationPausedGlobal Boolean @default(false) @map("automation_paused_global")
+
+  @@map("bot_settings")
+}
+
+model Subscriber {
+  id                     Int      @id @default(autoincrement())
+  fanvueUserUuid         String   @unique @map("fanvue_user_uuid")
+  handle                 String?
+  displayName            String?  @map("display_name")
+  llmContext             String   @default("{}") @map("llm_context")
+  automationEnabled      Boolean  @default(true) @map("automation_enabled")
+  messagesSincePpvOffer  Int      @default(0) @map("messages_since_ppv_offer")
+  pendingPpvMessageUuid  String?  @map("pending_ppv_message_uuid")
+  exitThreshold          Int?     @map("exit_threshold")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  facts    SubscriberFact[]
+  messages ChatMessage[]
+
+  @@map("subscribers")
+}
+
+model SubscriberFact {
+  id           String     @id @default(uuid())
+  subscriberId Int        @map("subscriber_id")
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  factKey      String     @map("fact_key")
+  factValue    String     @map("fact_value")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@unique([subscriberId, factKey])
+  @@map("subscriber_facts")
+}
+
+model ChatMessage {
+  id                Int        @id @default(autoincrement())
+  subscriberId      Int        @map("subscriber_id")
+  subscriber        Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  fanvueMessageUuid String     @unique @map("fanvue_message_uuid")
+  direction         String
+  body              String?
+  hadPricing        Boolean    @default(false) @map("had_pricing")
+  purchasedAtRaw    String?    @map("purchased_at_raw")
+  sentAt            String?    @map("sent_at")
+  createdAt         DateTime   @default(now()) @map("created_at")
+
+  @@map("chat_messages")
+}
