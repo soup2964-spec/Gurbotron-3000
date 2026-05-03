@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.Python
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Build / outputs
+dist/
+build/
+*.egg-info/
+.next/
+out/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs & caches
+*.log
+.npm/
+.cache/
+coverage/
